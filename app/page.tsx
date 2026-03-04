@@ -63,14 +63,15 @@ function SignaturePad({
   label: string;
   resetKey: string;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const [hasSig, setHasSig] = useState(false);
 
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
+    const ctx = c.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, c.width, c.height);
     setHasSig(false);
     onSave(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,26 +86,49 @@ function SignaturePad({
 
   const start = (e: any) => {
     e.preventDefault();
-    const c = canvasRef.current!; const ctx = c.getContext('2d')!;
-    const p = coords(e, c); ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const p = coords(e, c);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
     drawing.current = true;
   };
+
   const move = (e: any) => {
-    if (!drawing.current) return; e.preventDefault();
-    const c = canvasRef.current!; const ctx = c.getContext('2d')!;
+    if (!drawing.current) return;
+    e.preventDefault();
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
     const p = coords(e, c);
-    ctx.lineTo(p.x, p.y); ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
   };
+
   const end = (e: any) => {
-    if (!drawing.current) return; e.preventDefault();
+    if (!drawing.current) return;
+    e.preventDefault();
     drawing.current = false;
-    onSave(canvasRef.current!.toDataURL()); setHasSig(true);
+    const c = canvasRef.current;
+    if (!c) return;
+    onSave(c.toDataURL());
+    setHasSig(true);
   };
+
   const clear = () => {
-    const c = canvasRef.current!;
-    c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
-    onSave(null); setHasSig(false);
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, c.width, c.height);
+    onSave(null);
+    setHasSig(false);
   };
 
   return (
@@ -189,7 +213,6 @@ async function generarPDF(ticket: {
     amber: [245, 158, 11] as [number, number, number],
   };
 
-  // Encabezado
   doc.setFillColor(...C.indigo); doc.rect(0, 0, W, 30, 'F');
   doc.setTextColor(...C.white);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
@@ -221,25 +244,21 @@ async function generarPDF(ticket: {
     y += 6;
   };
 
-  // Info general
   section('INFORMACION GENERAL');
   row('Fecha', ticket.fecha, 112, 'Edificio', ticket.edificio);
   row('Tipo Equipo', ticket.tipoEquipo, 112, 'Nombre Equipo', ticket.nombreEquipo || '-');
   y += 2;
 
-  // Empleado
   section('DATOS DEL USUARIO');
   row('Nombre', ticket.empleado.nombre, 112, 'Cargo', ticket.empleado.cargo);
   row('Dependencia', ticket.empleado.dependencia, 112, 'Equipo', ticket.empleado.equipo);
   row('IP', ticket.empleado.ip || '-');
   y += 2;
 
-  // Tecnico
   section('TECNICO RESPONSABLE');
   row('Nombre', ticket.tecnico.nombre, 112, 'Rol', ticket.tecnico.role);
   y += 2;
 
-  // Componentes
   section('REVISION DE COMPONENTES');
   const tableW = W - margin * 2;
   const cols = [36, 13, 13, 13, 28, 33];
@@ -263,28 +282,23 @@ async function generarPDF(ticket: {
     doc.setFillColor(bg, bg === 248 ? 250 : 255, bg === 248 ? 252 : 255);
     doc.rect(margin, y, tableW, 7, 'F');
     doc.setDrawColor(...C.border); doc.rect(margin, y, tableW, 7, 'S');
-
     doc.setTextColor(...C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
     doc.text(COMP_NAMES[key] ?? key, cX[0] + 2, y + 5);
-
     [val.si, val.no, val.na].forEach((checked, i) => {
       const color = checked ? (i === 0 ? C.green : i === 1 ? C.red : C.gray) : [210, 220, 230] as [number, number, number];
       doc.setTextColor(...color); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
       doc.text(checked ? 'SI' : '-', cX[i + 1] + cols[i + 1] / 2, y + 5, { align: 'center' });
     });
-
     const eColor: Record<string, [number, number, number]> = { BUENO: C.green, REGULAR: C.amber, MALO: C.red };
     doc.setTextColor(...(eColor[val.estado] ?? C.gray));
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
     doc.text(val.estado || '-', cX[4] + cols[4] / 2, y + 5, { align: 'center' });
-
     doc.setTextColor(...C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
     doc.text(val.serial || '-', cX[5] + 2, y + 5);
     y += 7;
   });
   y += 4;
 
-  // Observaciones
   if (ticket.observaciones?.trim()) {
     section('OBSERVACIONES');
     doc.setTextColor(...C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
@@ -293,7 +307,6 @@ async function generarPDF(ticket: {
     y += (lines as string[]).length * 5 + 4;
   }
 
-  // Firmas
   if (y > 215) { doc.addPage(); y = 20; }
   section('FIRMAS DIGITALES');
 
@@ -323,7 +336,6 @@ async function generarPDF(ticket: {
   doc.text(tn, margin + sigW / 2, sigY + sigH + 10, { align: 'center' });
   doc.text(en, x2 + sigW / 2, sigY + sigH + 10, { align: 'center' });
 
-  // Pie
   doc.setFillColor(...C.indigo); doc.rect(0, 285, W, 12, 'F');
   doc.setTextColor(...C.white); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
   doc.text(
@@ -454,7 +466,6 @@ export default function App() {
     finally { setGenerating(false); }
   };
 
-  // ── PANTALLA TECNICO ─────────────────────────────────────────────────────
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-100 to-indigo-100 flex items-center justify-center p-4">
@@ -495,10 +506,8 @@ export default function App() {
     );
   }
 
-  // ── FORMULARIO PRINCIPAL ─────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -525,8 +534,6 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-5">
-
-        {/* Banner ticket guardado */}
         {lastTicket && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -542,7 +549,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Info general */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <h2 className="text-xs font-bold text-slate-500 mb-4 flex items-center gap-2 uppercase tracking-widest">
             <Calendar className="w-4 h-4 text-indigo-500" /> Informacion General
@@ -584,7 +590,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Seleccionar usuario */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <h2 className="text-xs font-bold text-slate-500 mb-4 flex items-center gap-2 uppercase tracking-widest">
             <User className="w-4 h-4 text-indigo-500" /> Seleccionar Usuario
@@ -665,7 +670,6 @@ export default function App() {
           )}
         </section>
 
-        {/* Componentes */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <h2 className="text-xs font-bold text-slate-500 mb-4 flex items-center gap-2 uppercase tracking-widest">
             <CheckCircle className="w-4 h-4 text-indigo-500" /> Componentes
@@ -718,7 +722,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Observaciones */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <h2 className="text-xs font-bold text-slate-500 mb-4 uppercase tracking-widest">Observaciones</h2>
           <textarea value={form.observaciones}
@@ -727,7 +730,6 @@ export default function App() {
             rows={3} placeholder="Describa el trabajo realizado, hallazgos o recomendaciones..." />
         </section>
 
-        {/* Firmas */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <h2 className="text-xs font-bold text-slate-500 mb-6 uppercase tracking-widest">Firmas Digitales</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
@@ -744,7 +746,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* Botones */}
         <div className="flex flex-col sm:flex-row justify-end gap-3 pb-8">
           <button onClick={handlePDF} disabled={generating}
             className="flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition text-sm disabled:opacity-60">
@@ -757,7 +758,6 @@ export default function App() {
             {submitting ? 'Guardando...' : lastTicket ? 'Guardado en BD' : 'Guardar en BD'}
           </button>
         </div>
-
       </main>
     </div>
   );
